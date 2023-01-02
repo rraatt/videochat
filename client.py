@@ -26,6 +26,13 @@ class VideoChat(ABC):
         host_name = socket.gethostname()
         self.host_ip = socket.gethostbyname(host_name)
         self.video_break = threading.Event()
+        self.video_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.video_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
+        socket_address = (self.host_ip, PORT)
+        self.video_socket.bind(socket_address)
+
+    def __del__(self):
+        self.video_socket.close()
 
     def _generate_video(self):
         while self.vid.isOpened():
@@ -56,10 +63,6 @@ class VideoChat(ABC):
     @abstractmethod
     def _send_video(self):
         self.video_break.clear()
-        self.video_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.video_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
-        socket_address = (self.host_ip, PORT)
-        self.video_socket.bind(socket_address)
         self.video_socket.settimeout(10)
 
     @abstractmethod
@@ -126,13 +129,13 @@ class Server(VideoChat):
                 cv2.imshow("SERVER RECEIVING VIDEO", frame)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
-                    self.video_socket.close()
+                    self.video_socket.settimeout(None)
                     break
                 time.sleep(0.001)
             except socket.timeout:
                 print("your friend left videochat")
                 self.video_break.set()
-                self.video_socket.close()
+                self.video_socket.settimeout(None)
                 break
 
     def _send_video(self):
@@ -225,13 +228,13 @@ class Client(VideoChat):
                 cv2.imshow("Your friend web cam", frame)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord('q'):
-                    self.video_socket.close()
+                    self.video_socket.settimeout(None)
                     os._exit(1)
                 time.sleep(0.001)
             except socket.timeout:
                 print("your friend left videochat")
                 self.video_break.set()
-                self.video_socket.close()
+                self.video_socket.settimeout(None)
                 break
 
     def _send_video(self):
