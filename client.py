@@ -25,6 +25,7 @@ class VideoChat(ABC):
         self.vid = cv2.VideoCapture(0)
         self.connection_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.connection_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
+        self.video_break = threading.Event()
 
     def __del__(self):
         self.connection_socket.close()
@@ -94,7 +95,8 @@ class Server(VideoChat):
             self.connection_socket.sendto(message, client_addr)
             cv2.imshow('SERVER TRANSMITTING VIDEO', frame)
             key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
+            if key == ord('q') or self.video_break.is_set():
+                cv2.destroyAllWindows()
                 os._exit(1)
             time.sleep(0.01)
 
@@ -156,22 +158,27 @@ class Server(VideoChat):
         video_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
         socket_address = (self.host_ip, PORT - 3)
         video_socket.bind(socket_address)
+        video_socket.settimeout(10)
         while True:
+            try:
+                packet, _ = video_socket.recvfrom(BUFF_SIZE)
+                data = base64.b64decode(packet, ' /')
+                npdata = np.frombuffer(data, dtype=np.uint8)
 
-            packet, _ = video_socket.recvfrom(BUFF_SIZE)
-            data = base64.b64decode(packet, ' /')
-            npdata = np.frombuffer(data, dtype=np.uint8)
+                frame = cv2.imdecode(npdata, 1)
+                cv2.imshow("SERVER RECEIVING VIDEO", frame)
+                key = cv2.waitKey(1) & 0xFF
 
-            frame = cv2.imdecode(npdata, 1)
-            cv2.imshow("SERVER RECEIVING VIDEO", frame)
-            key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    video_socket.close()
+                    break
 
-            if key == ord('q'):
+                time.sleep(0.001)
+            except socket.timeout:
+                print("your friend left")
+                self.video_break.set()
                 video_socket.close()
                 break
-
-            time.sleep(0.001)
-        cv2.destroyAllWindows()
 
 
 class Client(VideoChat):
@@ -270,5 +277,4 @@ class Client(VideoChat):
 
 if __name__ == '__main__':
     obj = Server()  # 192.168.50.89
-    obj.start_chat()
-
+    obj.start_video()
