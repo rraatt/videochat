@@ -57,7 +57,7 @@ class VideoChat(ABC):
         t4 = threading.Thread(target=self._get_video, args=())
         t5 = threading.Thread(target=self._generate_video, args=())
         t3.start()
-        t4.start()
+       # t4.start()
         t5.start()
 
     @abstractmethod
@@ -143,6 +143,7 @@ class Server(VideoChat):
         cv2.moveWindow('SERVER TRANSMITTING VIDEO', 400, 30)
         msg, client_addr = self.video_socket.recvfrom(BUFF_SIZE)
         print('GOT connection from ', client_addr)
+        self.video_socket.sendto(b'connected', (client_addr, PORT))
         while True:
             frame = self.q.get()
             encoded, buffer = cv2.imencode('.jpeg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -238,8 +239,9 @@ class Client(VideoChat):
                 break
 
     def _send_video(self):
-        message = b'Hello'
-        self.video_socket.sendto(message, (self.server_ip, PORT))
+        self.video_socket.sendto(b'Hello', (self.server_ip, PORT))
+        msg, serv = self.video_socket.recvfrom(BUFF_SIZE)
+        print('Connected to ', serv)
         cv2.namedWindow('Your webcam')
         cv2.moveWindow('Your webcam', 10, 30)
         while True:
