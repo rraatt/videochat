@@ -115,8 +115,6 @@ class Server(VideoChat):
                 os._exit(1)
 
     def _get_video(self):
-        cv2.namedWindow('SERVER RECEIVING VIDEO')
-        cv2.moveWindow('SERVER RECEIVING VIDEO', 400, 360)
         self.video_socket.settimeout(10)
         while True:
             try:
@@ -218,8 +216,7 @@ class Client(VideoChat):
         os._exit(1)
 
     def _get_video(self):
-        cv2.namedWindow('Your friend webcam')
-        cv2.moveWindow('Your friend webcam', 10, 360)
+        print(1)
         self.video_socket.settimeout(10)
         while True:
             try:
@@ -276,6 +273,7 @@ class Client(VideoChat):
                     message = struct.pack("Q", len(a)) + a
                     client_socket.sendall(message)
                     time.sleep(0.01)
+
 
 if __name__ == '__main__':
     #obj = Server()  # '192.168.50.89'
