@@ -151,7 +151,7 @@ class Server(VideoChat):
             self.video_socket.sendto(message, client_addr)
             cv2.imshow('SERVER TRANSMITTING VIDEO', frame)
             key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or self.video_break.is_set():
+            if self.video_break.is_set():
                 cv2.destroyAllWindows()
                 os._exit(1)
             time.sleep(0.01)
@@ -243,6 +243,8 @@ class Client(VideoChat):
         self.video_socket.sendto(b'Hello', (self.server_ip, PORT))
         msg, serv = self.video_socket.recvfrom(BUFF_SIZE)
         print('Connected to ', serv)
+        t4 = threading.Thread(target=self._get_video, args=())
+        t4.start()
         cv2.namedWindow('Your webcam')
         cv2.moveWindow('Your webcam', 10, 30)
         while True:
@@ -253,7 +255,7 @@ class Client(VideoChat):
                 self.video_socket.sendto(message, (self.server_ip, PORT))
                 cv2.imshow('Your webcam', frame)
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord('q') or self.video_break.is_set():
+                if self.video_break.is_set():
                     cv2.destroyAllWindows()
                     os._exit(1)
                 time.sleep(0.001)
@@ -276,5 +278,6 @@ class Client(VideoChat):
                     time.sleep(0.01)
 
 if __name__ == '__main__':
-    obj = Server()  # 192.168.50.89
+    #obj = Server()  # '192.168.50.89'
+    obj = Client('192.168.50.88')
     obj.start_video()
