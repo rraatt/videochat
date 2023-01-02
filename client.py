@@ -57,13 +57,12 @@ class VideoChat(ABC):
         t4 = threading.Thread(target=self._get_video, args=())
         t5 = threading.Thread(target=self._generate_video, args=())
         t3.start()
-       # t4.start()
+        t4.start()
         t5.start()
 
     @abstractmethod
     def _send_video(self):
         self.video_break.clear()
-        self.video_socket.settimeout(10)
 
     @abstractmethod
     def _get_message(self):
@@ -120,6 +119,7 @@ class Server(VideoChat):
     def _get_video(self):
         cv2.namedWindow('SERVER RECEIVING VIDEO')
         cv2.moveWindow('SERVER RECEIVING VIDEO', 400, 360)
+        self.video_socket.settimeout(10)
         while True:
             try:
                 packet, _ = self.video_socket.recvfrom(BUFF_SIZE)
@@ -139,11 +139,11 @@ class Server(VideoChat):
                 break
 
     def _send_video(self):
-        cv2.namedWindow('SERVER TRANSMITTING VIDEO')
-        cv2.moveWindow('SERVER TRANSMITTING VIDEO', 400, 30)
         msg, client_addr = self.video_socket.recvfrom(BUFF_SIZE)
         print('GOT connection from ', client_addr)
-        self.video_socket.sendto(b'connected', (client_addr, PORT))
+        self.video_socket.sendto(b'connected', client_addr)
+        cv2.namedWindow('SERVER TRANSMITTING VIDEO')
+        cv2.moveWindow('SERVER TRANSMITTING VIDEO', 400, 30)
         while True:
             frame = self.q.get()
             encoded, buffer = cv2.imencode('.jpeg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -220,6 +220,7 @@ class Client(VideoChat):
     def _get_video(self):
         cv2.namedWindow('Your friend webcam')
         cv2.moveWindow('Your friend webcam', 10, 360)
+        self.video_socket.settimeout(10)
         while True:
             try:
                 packet, _ = self.video_socket.recvfrom(BUFF_SIZE)
