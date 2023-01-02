@@ -54,10 +54,8 @@ class VideoChat(ABC):
 
     def start_video(self):
         t3 = threading.Thread(target=self._send_video, args=())
-        t4 = threading.Thread(target=self._get_video, args=())
         t5 = threading.Thread(target=self._generate_video, args=())
         t3.start()
-        t4.start()
         t5.start()
 
     @abstractmethod
@@ -142,6 +140,8 @@ class Server(VideoChat):
         msg, client_addr = self.video_socket.recvfrom(BUFF_SIZE)
         print('GOT connection from ', client_addr)
         self.video_socket.sendto(b'connected', client_addr)
+        t4 = threading.Thread(target=self._get_video, args=())
+        t4.start()
         cv2.namedWindow('SERVER TRANSMITTING VIDEO')
         cv2.moveWindow('SERVER TRANSMITTING VIDEO', 400, 30)
         while True:
