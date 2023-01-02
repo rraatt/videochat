@@ -29,7 +29,7 @@ class VideoChat(ABC):
     def __del__(self):
         self.connection_socket.close()
 
-    def generate_video(self):
+    def _generate_video(self):
         while self.vid.isOpened():
             try:
                 _, frame = self.vid.read()
@@ -42,33 +42,33 @@ class VideoChat(ABC):
         self.vid.release()
 
     def start_chat(self):
-        t1 = threading.Thread(target=self.get_message, args=())
-        t2 = threading.Thread(target=self.send_message, args=())
+        t1 = threading.Thread(target=self._get_message, args=())
+        t2 = threading.Thread(target=self._send_message, args=())
         t1.start()
         t2.start()
 
     def start_video(self):
-        t3 = threading.Thread(target=self.get_video, args=())
-        t4 = threading.Thread(target=self.send_video, args=())
-        t5 = threading.Thread(target=self.generate_video, args=())
+        t3 = threading.Thread(target=self._get_video, args=())
+        t4 = threading.Thread(target=self._send_video, args=())
+        t5 = threading.Thread(target=self._generate_video, args=())
         t3.start()
         t4.start()
         t5.start()
 
     @abstractmethod
-    def send_video(self):
+    def _send_video(self):
         pass
 
     @abstractmethod
-    def get_message(self):
+    def _get_message(self):
         pass
 
     @abstractmethod
-    def send_message(self):
+    def _send_message(self):
         pass
 
     @abstractmethod
-    def get_video(self):
+    def _get_video(self):
         pass
 
 
@@ -82,7 +82,7 @@ class Server(VideoChat):
         self.connection_socket.bind(socket_address)
         print('Listening at:', socket_address)
 
-    def send_video(self):
+    def _send_video(self):
         cv2.namedWindow('SERVER TRANSMITTING VIDEO')
         cv2.moveWindow('SERVER TRANSMITTING VIDEO', 400, 30)
         msg, client_addr = self.connection_socket.recvfrom(BUFF_SIZE)
@@ -98,7 +98,7 @@ class Server(VideoChat):
                 os._exit(1)
             time.sleep(0.01)
 
-    def send_message(self):
+    def _send_message(self):
         s = socket.socket()
         s.bind((self.host_ip, (PORT - 1)))
         s.listen(5)
@@ -116,7 +116,7 @@ class Server(VideoChat):
                     cnt += 1
                     time.sleep(0.01)
 
-    def get_message(self):
+    def _get_message(self):
         s = socket.socket()
         s.bind((self.host_ip, (PORT - 2)))
         s.listen(5)
@@ -149,7 +149,7 @@ class Server(VideoChat):
                 client_socket.close()
                 os._exit(1)
 
-    def get_video(self):
+    def _get_video(self):
         cv2.namedWindow('SERVER RECEIVING VIDEO')
         cv2.moveWindow('SERVER RECEIVING VIDEO', 400, 360)
         video_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -185,7 +185,7 @@ class Client(VideoChat):
         message = b'Hello'
         self.connection_socket.sendto(message, (self.host_ip, PORT))
 
-    def get_message(self):
+    def _get_message(self):
         """Creating a TCP socket and connecting to person, to receive messages"""
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         socket_address = (self.host_ip, PORT - 1)
@@ -218,7 +218,7 @@ class Client(VideoChat):
         print('closed')
         os._exit(1)
 
-    def get_video(self):
+    def _get_video(self):
         cv2.namedWindow('Your friend webcam')
         cv2.moveWindow('Your friend webcam', 10, 360)
         while True:
@@ -233,7 +233,7 @@ class Client(VideoChat):
                 os._exit(1)
             time.sleep(0.001)
 
-    def send_message(self):
+    def _send_message(self):
         """Creating a TCP socket for sending messages"""
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         socket_address = (self.host_ip, PORT - 2)
@@ -250,7 +250,7 @@ class Client(VideoChat):
                     client_socket.sendall(message)
                     time.sleep(0.01)
 
-    def send_video(self):
+    def _send_video(self):
         socket_address = (self.host_ip, PORT - 3)
         print('server listening at', socket_address)
         cv2.namedWindow('Your webcam')
@@ -269,5 +269,6 @@ class Client(VideoChat):
 
 
 if __name__ == '__main__':
-    obj = Client('192.168.50.156')  # 192.168.50.89
-    obj.start()
+    obj = Server()  # 192.168.50.89
+    obj.start_chat()
+
