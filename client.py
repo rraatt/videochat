@@ -23,12 +23,9 @@ class VideoChat(ABC):
     def __init__(self):
         self.q = queue.Queue(maxsize=10)
         self.vid = cv2.VideoCapture(0)
-        self.connection_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.connection_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
+        host_name = socket.gethostname()
+        self.host_ip = socket.gethostbyname(host_name)
         self.video_break = threading.Event()
-
-    def __del__(self):
-        self.connection_socket.close()
 
     def _generate_video(self):
         while self.vid.isOpened():
@@ -49,8 +46,8 @@ class VideoChat(ABC):
         t2.start()
 
     def start_video(self):
-        t3 = threading.Thread(target=self._get_video, args=())
-        t4 = threading.Thread(target=self._send_video, args=())
+        t3 = threading.Thread(target=self._send_video, args=())
+        t4 = threading.Thread(target=self._get_video, args=())
         t5 = threading.Thread(target=self._generate_video, args=())
         t3.start()
         t4.start()
@@ -58,7 +55,12 @@ class VideoChat(ABC):
 
     @abstractmethod
     def _send_video(self):
-        pass
+        self.video_break.clear()
+        self.video_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.video_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
+        socket_address = (self.host_ip, PORT)
+        self.video_socket.bind(socket_address)
+        self.video_socket.settimeout(10)
 
     @abstractmethod
     def _get_message(self):
@@ -76,50 +78,11 @@ class VideoChat(ABC):
 class Server(VideoChat):
     def __init__(self):
         super().__init__()
-        host_name = socket.gethostname()
-        self.host_ip = socket.gethostbyname(host_name)
         print(self.host_ip)
-        socket_address = (self.host_ip, PORT)
-        self.connection_socket.bind(socket_address)
-        print('Listening at:', socket_address)
-
-    def _send_video(self):
-        cv2.namedWindow('SERVER TRANSMITTING VIDEO')
-        cv2.moveWindow('SERVER TRANSMITTING VIDEO', 400, 30)
-        msg, client_addr = self.connection_socket.recvfrom(BUFF_SIZE)
-        print('GOT connection from ', client_addr)
-        while True:
-            frame = self.q.get()
-            encoded, buffer = cv2.imencode('.jpeg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            message = base64.b64encode(buffer)
-            self.connection_socket.sendto(message, client_addr)
-            cv2.imshow('SERVER TRANSMITTING VIDEO', frame)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or self.video_break.is_set():
-                cv2.destroyAllWindows()
-                os._exit(1)
-            time.sleep(0.01)
-
-    def _send_message(self):
-        s = socket.socket()
-        s.bind((self.host_ip, (PORT - 1)))
-        s.listen(5)
-        client_socket, addr = s.accept()
-        cnt = 0
-        while True:
-            if client_socket:
-                while True:
-                    print('SERVER TEXT ENTER BELOW:')
-                    data = input()
-                    a = pickle.dumps(data)
-                    message = struct.pack("Q", len(a)) + a
-                    client_socket.sendall(message)
-
-                    cnt += 1
-                    time.sleep(0.01)
+        print('Listening at:', (self.host_ip, PORT))
 
     def _get_message(self):
-        s = socket.socket()
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((self.host_ip, (PORT - 2)))
         s.listen(5)
         client_socket, addr = s.accept()
@@ -154,49 +117,74 @@ class Server(VideoChat):
     def _get_video(self):
         cv2.namedWindow('SERVER RECEIVING VIDEO')
         cv2.moveWindow('SERVER RECEIVING VIDEO', 400, 360)
-        video_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        video_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
-        socket_address = (self.host_ip, PORT - 3)
-        video_socket.bind(socket_address)
-        video_socket.settimeout(10)
         while True:
             try:
-                packet, _ = video_socket.recvfrom(BUFF_SIZE)
+                packet, _ = self.video_socket.recvfrom(BUFF_SIZE)
                 data = base64.b64decode(packet, ' /')
                 npdata = np.frombuffer(data, dtype=np.uint8)
-
                 frame = cv2.imdecode(npdata, 1)
                 cv2.imshow("SERVER RECEIVING VIDEO", frame)
                 key = cv2.waitKey(1) & 0xFF
-
                 if key == ord('q'):
-                    video_socket.close()
+                    self.video_socket.close()
                     break
-
                 time.sleep(0.001)
             except socket.timeout:
-                print("your friend left")
+                print("your friend left videochat")
                 self.video_break.set()
-                video_socket.close()
+                self.video_socket.close()
                 break
+
+    def _send_video(self):
+        cv2.namedWindow('SERVER TRANSMITTING VIDEO')
+        cv2.moveWindow('SERVER TRANSMITTING VIDEO', 400, 30)
+        msg, client_addr = self.video_socket.recvfrom(BUFF_SIZE)
+        print('GOT connection from ', client_addr)
+        while True:
+            frame = self.q.get()
+            encoded, buffer = cv2.imencode('.jpeg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            message = base64.b64encode(buffer)
+            self.video_socket.sendto(message, client_addr)
+            cv2.imshow('SERVER TRANSMITTING VIDEO', frame)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q') or self.video_break.is_set():
+                cv2.destroyAllWindows()
+                os._exit(1)
+            time.sleep(0.01)
+
+    def _send_message(self):
+        s = socket.socket()
+        s.bind((self.host_ip, (PORT - 1)))
+        s.listen(5)
+        client_socket, addr = s.accept()
+        cnt = 0
+        while True:
+            if client_socket:
+                while True:
+                    print('SERVER TEXT ENTER BELOW:')
+                    data = input()
+                    a = pickle.dumps(data)
+                    message = struct.pack("Q", len(a)) + a
+                    client_socket.sendall(message)
+
+                    cnt += 1
+                    time.sleep(0.01)
 
 
 class Client(VideoChat):
     """Class to initialize a client connection (connecting to person, who requested the call)
     manage messages and video signal"""
 
-    def __init__(self, host_ip):
+    def __init__(self, server_ip):
         super().__init__()
-        self.host_ip = host_ip
-        print(self.host_ip)
-        message = b'Hello'
-        self.connection_socket.sendto(message, (self.host_ip, PORT))
+        self.server_ip = server_ip
+        print(self.server_ip)
+
 
     def _get_message(self):
         """Creating a TCP socket and connecting to person, to receive messages"""
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        socket_address = (self.host_ip, PORT - 1)
-        print('server listening at', socket_address)
+        socket_address = (self.server_ip, PORT - 1)
         client_socket.connect(socket_address)
         print("CLIENT CONNECTED TO", socket_address)
         data = b""
@@ -229,21 +217,45 @@ class Client(VideoChat):
         cv2.namedWindow('Your friend webcam')
         cv2.moveWindow('Your friend webcam', 10, 360)
         while True:
-            packet, _ = self.connection_socket.recvfrom(BUFF_SIZE)
-            data = base64.b64decode(packet, ' /')
-            npdata = np.frombuffer(data, dtype=np.uint8)
-            frame = cv2.imdecode(npdata, 1)
-            cv2.imshow("Your friend web cam", frame)
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                self.connection_socket.close()
-                os._exit(1)
-            time.sleep(0.001)
+            try:
+                packet, _ = self.video_socket.recvfrom(BUFF_SIZE)
+                data = base64.b64decode(packet, ' /')
+                npdata = np.frombuffer(data, dtype=np.uint8)
+                frame = cv2.imdecode(npdata, 1)
+                cv2.imshow("Your friend web cam", frame)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    self.video_socket.close()
+                    os._exit(1)
+                time.sleep(0.001)
+            except socket.timeout:
+                print("your friend left videochat")
+                self.video_break.set()
+                self.video_socket.close()
+                break
+
+    def _send_video(self):
+        message = b'Hello'
+        self.video_socket.sendto(message, (self.server_ip, PORT))
+        cv2.namedWindow('Your webcam')
+        cv2.moveWindow('Your webcam', 10, 30)
+        while True:
+            while True:
+                frame = self.q.get()
+                encoded, buffer = cv2.imencode('.jpeg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                message = base64.b64encode(buffer)
+                self.video_socket.sendto(message, (self.server_ip, PORT))
+                cv2.imshow('Your webcam', frame)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q') or self.video_break.is_set():
+                    cv2.destroyAllWindows()
+                    os._exit(1)
+                time.sleep(0.001)
 
     def _send_message(self):
         """Creating a TCP socket for sending messages"""
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        socket_address = (self.host_ip, PORT - 2)
+        socket_address = (self.server_ip, PORT - 2)
         print('server listening at', socket_address)
         client_socket.connect(socket_address)
         print("msg send CLIENT CONNECTED TO", socket_address)
@@ -256,24 +268,6 @@ class Client(VideoChat):
                     message = struct.pack("Q", len(a)) + a
                     client_socket.sendall(message)
                     time.sleep(0.01)
-
-    def _send_video(self):
-        socket_address = (self.host_ip, PORT - 3)
-        print('server listening at', socket_address)
-        cv2.namedWindow('Your webcam')
-        cv2.moveWindow('Your webcam', 10, 30)
-        while True:
-            while True:
-                frame = self.q.get()
-                encoded, buffer = cv2.imencode('.jpeg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                message = base64.b64encode(buffer)
-                self.connection_socket.sendto(message, socket_address)
-                cv2.imshow('Your webcam', frame)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
-                    os._exit(1)
-                time.sleep(0.001)
-
 
 if __name__ == '__main__':
     obj = Server()  # 192.168.50.89
