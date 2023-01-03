@@ -156,8 +156,6 @@ class ClientPassive(VideoChat):
         super().__init__()
         self.client_address = None  # Field for storing clients address
         print(self.host_ip)
-        print('Listening at:', (self.host_ip, PORT))
-
     def start_chat(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((self.host_ip, MESSAGE_PORT))
@@ -180,13 +178,13 @@ class ClientPassive(VideoChat):
                 if key == ord('q'):
                     self.video_socket.settimeout(None)
                     self.video_break.set()
-                    break
+                    SystemExit()
                 time.sleep(0.001)
             except socket.timeout:
                 print("your friend left videochat")
                 self.video_break.set()
                 self.video_socket.settimeout(None)
-                break
+                SystemExit()
 
     def _send_video(self):
         """Initiation a handshake process with second user and starting video and audio transmission"""
@@ -200,7 +198,7 @@ class ClientPassive(VideoChat):
             cv2.waitKey(1) & 0xFF
             if self.video_break.is_set():  # in case of disconnection destroy video windows
                 cv2.destroyAllWindows()
-                os._exit(1)
+                SystemExit()
             time.sleep(0.01)
 
 
@@ -232,16 +230,15 @@ class ClientActive(VideoChat):
                 if key == ord('q'):
                     self.video_socket.settimeout(None)
                     self.video_break.set()
-                    os._exit(1)
+                    SystemExit()
                 time.sleep(0.001)
             except socket.timeout:
                 print("your friend left videochat")
                 self.video_break.set()
                 self.video_socket.settimeout(None)
-                break
+                SystemExit()
 
     def _send_video(self):
-        self.video_socket.sendto(b'Hello', (self.server_ip, VIDEO_PORT))
         self.start_audio(self.server_ip)
         while True:
             while True:
@@ -253,11 +250,12 @@ class ClientActive(VideoChat):
                 cv2.waitKey(1) & 0xFF
                 if self.video_break.is_set():
                     cv2.destroyAllWindows()
-                    os._exit(1)
+                    SystemExit()
                 time.sleep(0.001)
 
 
 if __name__ == '__main__':
     #obj = Client('192.168.50.156')  # '192.168.50.89'
-    obj = ClientPassive()
+    obj = ClientActive('192.168.50.88')
     obj.start_chat()
+    obj.start_video()
