@@ -60,8 +60,8 @@ class VideoChat(ABC):
 
     @abstractmethod
     def start_chat(self):
-        t1 = threading.Thread(target=self._get_message(), args=())
-        t2 = threading.Thread(target=self._send_message(), args=())
+        t1 = threading.Thread(target=self._send_message, args=())
+        t2 = threading.Thread(target=self._get_message, args=())
         t1.start()
         t2.start()
 
@@ -156,7 +156,7 @@ class ClientPassive(VideoChat):
 
     def start_chat(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((self.host_ip, (PORT - 2)))
+        s.bind((self.host_ip, (PORT - 1)))
         s.listen(5)
         self.client_socket, self.client_address = s.accept()
         super().start_chat()
@@ -261,5 +261,5 @@ class ClientActive(VideoChat):
 
 if __name__ == '__main__':
     #obj = Client('192.168.50.156')  # '192.168.50.89'
-    obj = ClientPassive()
+    obj = ClientActive("192.168.50.88")
     obj.start_chat()
