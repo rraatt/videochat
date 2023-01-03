@@ -29,8 +29,6 @@ class VideoChat(ABC):
     def __init__(self):
         self.q = queue.Queue(maxsize=10)
         self.vid = cv2.VideoCapture(0)
-        self.p = pyaudio.PyAudio()
-        self.audio_stream = self.p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
         host_name = socket.gethostname()
         self.host_ip = socket.gethostbyname(host_name)
         self.video_break = threading.Event()
@@ -44,9 +42,6 @@ class VideoChat(ABC):
     def __del__(self):
         self.video_socket.close()
         self.audio_socket.close()
-        self.audio_stream.stop_stream()
-        self.audio_stream.close()
-        self.p.terminate()
 
     def _generate_video(self):
         while self.vid.isOpened():
@@ -79,18 +74,30 @@ class VideoChat(ABC):
         t2.start()
 
     def _send_audio(self, friend_ip):
+        p = pyaudio.PyAudio()
+        audio_stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
+                                        frames_per_buffer=CHUNK)
         while True:
-            data = self.audio_stream.read(CHUNK)
+            data = audio_stream.read(CHUNK)
             self.audio_socket.sendto(data, (friend_ip, PORT-3))
             if self.video_break.is_set():
                 break
+        audio_stream.stop_stream()
+        audio_stream.close()
+        p.terminate()
 
     def _get_audio(self):
+        p = pyaudio.PyAudio()
+        audio_stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
+                              frames_per_buffer=CHUNK)
         while True:
             data, addr = self.audio_socket.recvfrom(CHUNK * CHANNELS * 2)
             self.audio_stream.write(data)
             if self.video_break.is_set():
                 break
+        audio_stream.stop_stream()
+        audio_stream.close()
+        p.terminate()
 
     @abstractmethod
     def _send_video(self):
