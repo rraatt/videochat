@@ -6,12 +6,10 @@ import struct
 import threading
 import time
 from abc import ABC, abstractmethod
-
 import cv2
 import imutils
 import numpy as np
 import socket
-
 import pyaudio
 
 BUFF_SIZE = 65536
@@ -25,18 +23,22 @@ RATE = 44100
 
 
 class VideoChat(ABC):
+    """Father class with required setup for initiating text chat + video chat connection, abstract methods required for
+    implementation in ClientActive and ClientPassive classes"""
 
     def __init__(self):
-        self.q = queue.Queue(maxsize=10)
-        self.vid = cv2.VideoCapture(0)
+        """Initiating sockets, event to stop threads in case of disconnection"""
+        self.client_socket = None
+        self.q = queue.Queue(maxsize=10)  # Queue for webcam frames
+        self.vid = cv2.VideoCapture(0)  # Webcam feed
         host_name = socket.gethostname()
         self.host_ip = socket.gethostbyname(host_name)
         self.video_break = threading.Event()
-        self.video_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.video_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # Socket used for video connection
         self.video_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, BUFF_SIZE)
         socket_address = (self.host_ip, PORT)
         self.video_socket.bind(socket_address)
-        self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # Socket used for audio connection
         self.audio_socket.bind((self.host_ip, PORT - 3))
 
     def __del__(self):
@@ -44,6 +46,7 @@ class VideoChat(ABC):
         self.audio_socket.close()
 
     def _generate_video(self):
+        """Generating video feed from webcam"""
         while self.vid.isOpened():
             try:
                 _, frame = self.vid.read()
@@ -55,28 +58,31 @@ class VideoChat(ABC):
         print('Player closed')
         self.vid.release()
 
+    @abstractmethod
     def start_chat(self):
-        t1 = threading.Thread(target=self._get_message, args=())
-        t2 = threading.Thread(target=self._send_message, args=())
+        t1 = threading.Thread(target=self._get_message(), args=())
+        t2 = threading.Thread(target=self._send_message(), args=())
         t1.start()
         t2.start()
 
     def start_video(self):
         t1 = threading.Thread(target=self._send_video, args=())
         t2 = threading.Thread(target=self._generate_video, args=())
+        t3 = threading.Thread(target=self._get_video, args=())
         t1.start()
         t2.start()
+        t3.start()
 
     def start_audio(self, friend_ip):
-        t1 = threading.Thread(target=self._send_audio, args=(friend_ip,))
-        t2 = threading.Thread(target=self._get_audio, args=())
+        p = pyaudio.PyAudio()
+        audio_stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, output=True,
+                              frames_per_buffer=CHUNK)
+        t1 = threading.Thread(target=self._send_audio, args=(friend_ip, audio_stream, p))
+        t2 = threading.Thread(target=self._get_audio, args=(audio_stream,))
         t1.start()
         t2.start()
 
-    def _send_audio(self, friend_ip):
-        p = pyaudio.PyAudio()
-        audio_stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
-                                        frames_per_buffer=CHUNK)
+    def _send_audio(self, friend_ip, audio_stream, p):
         while True:
             data = audio_stream.read(CHUNK)
             self.audio_socket.sendto(data, (friend_ip, PORT-3))
@@ -86,77 +92,79 @@ class VideoChat(ABC):
         audio_stream.close()
         p.terminate()
 
-    def _get_audio(self):
-        p = pyaudio.PyAudio()
-        audio_stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True,
-                              frames_per_buffer=CHUNK)
+    def _get_audio(self, audio_stream):
         while True:
             data, addr = self.audio_socket.recvfrom(CHUNK * CHANNELS * 2)
-            self.audio_stream.write(data)
+            audio_stream.write(data)
             if self.video_break.is_set():
                 break
-        audio_stream.stop_stream()
-        audio_stream.close()
-        p.terminate()
 
     @abstractmethod
     def _send_video(self):
         self.video_break.clear()
 
-    @abstractmethod
     def _get_message(self):
-        pass
-
-    @abstractmethod
-    def _send_message(self):
-        pass
-
-    @abstractmethod
-    def _get_video(self):
-        pass
-
-
-class Server(VideoChat):
-    def __init__(self):
-        super().__init__()
-        print(self.host_ip)
-        print('Listening at:', (self.host_ip, PORT))
-
-    def _get_message(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((self.host_ip, (PORT - 2)))
-        s.listen(5)
-        client_socket, addr = s.accept()
+        """Creating a TCP socket for text messaging and receiving incoming messages"""
         data = b""
         payload_size = struct.calcsize("Q")
-
         while True:
             try:
                 while len(data) < payload_size:
-                    packet = client_socket.recv(4 * 1024)  # 4K
+                    packet = self.client_socket.recv(PACKET_SIZE)
                     if not packet:
                         break
                     data += packet
                 packed_msg_size = data[:payload_size]
                 data = data[payload_size:]
-                msg_size = struct.unpack("Q", packed_msg_size)[0]
+                msg_size = struct.unpack("Q", packed_msg_size)[0]  # Getting the size of message from message header
                 while len(data) < msg_size:
-                    data += client_socket.recv(4 * 1024)
+                    data += self.client_socket.recv(PACKET_SIZE)
                 frame_data = data[:msg_size]
                 data = data[msg_size:]
-                frame = pickle.loads(frame_data)
+                frame = pickle.loads(frame_data)  # received message
                 print('', end='\n')
-                print('CLIENT TEXT RECEIVED:', frame, end='\n')
-                print('SERVER TEXT ENTER BELOW:')
+                print('TEXT RECEIVED:', frame, end='\n')
+                print('TEXT ENTER BELOW:')
                 time.sleep(0.001)
-
             except Exception:
                 print('Your friend left conversation')
-                client_socket.close()
+                self.client_socket.close()
                 os._exit(1)
 
+    def _send_message(self):
+        while True:
+            if self.client_socket:
+                while True:
+                    print('SERVER TEXT ENTER BELOW:')
+                    data = input()
+                    a = pickle.dumps(data)
+                    message = struct.pack("Q", len(a)) + a
+                    self.client_socket.sendall(message)
+                    time.sleep(0.01)
+
+    @abstractmethod
     def _get_video(self):
-        self.video_socket.settimeout(10)
+        pass
+
+
+class ClientPassive(VideoChat):
+    def __init__(self):
+        super().__init__()
+        self.client_address = None
+        print(self.host_ip)
+        print('Listening at:', (self.host_ip, PORT))
+
+    def start_chat(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((self.host_ip, (PORT - 2)))
+        s.listen(5)
+        self.client_socket, self.client_address = s.accept()
+        super().start_chat()
+
+    def _get_video(self):
+        """Getting video feed from socket, in case of connection timeout or user initiated disconnect set video_break event
+        to stop video and audio transmission"""
+        self.video_socket.settimeout(10)  # Timeout in case of second user disconnection
         while True:
             try:
                 packet, _ = self.video_socket.recvfrom(BUFF_SIZE)
@@ -177,48 +185,22 @@ class Server(VideoChat):
                 break
 
     def _send_video(self):
-        msg, client_addr = self.video_socket.recvfrom(BUFF_SIZE)
-        print('GOT connection from ', client_addr)
-        self.video_socket.sendto(b'connected', client_addr)
-        t4 = threading.Thread(target=self._get_video, args=())
-        t4.start()
-        self.start_audio(client_addr[0])
-        cv2.namedWindow('SERVER TRANSMITTING VIDEO')
-        cv2.moveWindow('SERVER TRANSMITTING VIDEO', 400, 30)
+        """Initiation a handshake process with second user and starting video and audio transmission"""
+        self.start_audio(self.client_address[0])  # starting audio transmission to active user
         while True:
             frame = self.q.get()
             encoded, buffer = cv2.imencode('.jpeg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             message = base64.b64encode(buffer)
-            self.video_socket.sendto(message, client_addr)
+            self.video_socket.sendto(message, (self.client_address[0], PORT-1))
             cv2.imshow('SERVER TRANSMITTING VIDEO', frame)
-            key = cv2.waitKey(1) & 0xFF
-            if self.video_break.is_set():
+            cv2.waitKey(1) & 0xFF
+            if self.video_break.is_set():  # in case of disconnection destroy video windows
                 cv2.destroyAllWindows()
                 os._exit(1)
             time.sleep(0.01)
 
 
-
-    def _send_message(self):
-        s = socket.socket()
-        s.bind((self.host_ip, (PORT - 1)))
-        s.listen(5)
-        client_socket, addr = s.accept()
-        cnt = 0
-        while True:
-            if client_socket:
-                while True:
-                    print('SERVER TEXT ENTER BELOW:')
-                    data = input()
-                    a = pickle.dumps(data)
-                    message = struct.pack("Q", len(a)) + a
-                    client_socket.sendall(message)
-
-                    cnt += 1
-                    time.sleep(0.01)
-
-
-class Client(VideoChat):
+class ClientActive(VideoChat):
     """Class to initialize a client connection (connecting to person, who requested the call)
     manage messages and video signal"""
 
@@ -227,41 +209,13 @@ class Client(VideoChat):
         self.server_ip = server_ip
         print(self.server_ip)
 
-
-    def _get_message(self):
-        """Creating a TCP socket and connecting to person, to receive messages"""
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    def start_chat(self):
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         socket_address = (self.server_ip, PORT - 1)
-        client_socket.connect(socket_address)
-        print("CLIENT CONNECTED TO", socket_address)
-        data = b""
-        payload_size = struct.calcsize("Q")
-        while True:
-            try:
-                while len(data) < payload_size:
-                    packet = client_socket.recv(PACKET_SIZE)
-                    if not packet: break
-                    data += packet
-                packed_msg_size = data[:payload_size]
-                data = data[payload_size:]
-                msg_size = struct.unpack("Q", packed_msg_size)[0]
-                while len(data) < msg_size:
-                    data += client_socket.recv(PACKET_SIZE)
-                frame_data = data[:msg_size]
-                data = data[msg_size:]
-                frame = pickle.loads(frame_data)
-                print('', end='\n')
-                print('SERVER TEXT RECEIVED:', frame, end='\n')
-                print('CLIENT TEXT ENTER BELOW:')
-                time.sleep(0.01)
-            except:
-                break
-        client_socket.close()
-        print('closed')
-        os._exit(1)
+        self.client_socket.connect(socket_address)
+        super().start_chat()
 
     def _get_video(self):
-        print(1)
         self.video_socket.settimeout(10)
         while True:
             try:
@@ -298,31 +252,14 @@ class Client(VideoChat):
                 message = base64.b64encode(buffer)
                 self.video_socket.sendto(message, (self.server_ip, PORT))
                 cv2.imshow('Your webcam', frame)
-                key = cv2.waitKey(1) & 0xFF
+                cv2.waitKey(1) & 0xFF
                 if self.video_break.is_set():
                     cv2.destroyAllWindows()
                     os._exit(1)
                 time.sleep(0.001)
 
-    def _send_message(self):
-        """Creating a TCP socket for sending messages"""
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        socket_address = (self.server_ip, PORT - 2)
-        print('server listening at', socket_address)
-        client_socket.connect(socket_address)
-        print("msg send CLIENT CONNECTED TO", socket_address)
-        while True:
-            if client_socket:
-                while True:
-                    print('CLIENT TEXT ENTER BELOW:')
-                    data = input()
-                    a = pickle.dumps(data)
-                    message = struct.pack("Q", len(a)) + a
-                    client_socket.sendall(message)
-                    time.sleep(0.01)
-
 
 if __name__ == '__main__':
-    #obj = Server()  # '192.168.50.89'
-    obj = Client('192.168.50.88')
-    obj.start_video()
+    #obj = Client('192.168.50.156')  # '192.168.50.89'
+    obj = ClientPassive()
+    obj.start_chat()
