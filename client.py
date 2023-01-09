@@ -182,13 +182,13 @@ class ClientPassive(VideoChat):
                 if key == ord('q'):
                     self.video_socket.settimeout(None)
                     self.video_break.set()
-                    break
+                    SystemExit()
                 time.sleep(0.001)
             except socket.timeout:
                 print("your friend left videochat")
                 self.video_break.set()
                 self.video_socket.settimeout(None)
-                break
+                SystemExit()
 
     def _send_video(self):
         """Initiation a handshake process with second user and starting video and audio transmission"""
@@ -202,7 +202,7 @@ class ClientPassive(VideoChat):
             cv2.waitKey(1) & 0xFF
             if self.video_break.is_set():  # in case of disconnection destroy video windows
                 cv2.destroyAllWindows()
-                os._exit(1)
+                SystemExit()
             time.sleep(0.01)
 
 
@@ -235,13 +235,13 @@ class ClientActive(VideoChat):
                 if key == ord('q'):
                     self.video_socket.settimeout(None)
                     self.video_break.set()
-                    os._exit(1)
+                    SystemExit()
                 time.sleep(0.001)
             except socket.timeout:
                 print("your friend left videochat")
                 self.video_break.set()
                 self.video_socket.settimeout(None)
-                break
+                SystemExit()
 
     def _send_video(self):
         self.start_audio(self.server_ip)
@@ -255,7 +255,7 @@ class ClientActive(VideoChat):
                 cv2.waitKey(1) & 0xFF
                 if self.video_break.is_set():
                     cv2.destroyAllWindows()
-                    os._exit(1)
+                    SystemExit()
                 time.sleep(0.001)
 
 
