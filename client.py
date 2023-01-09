@@ -46,6 +46,7 @@ class VideoChat(ABC):
     def __del__(self):
         self.video_socket.close()
         self.audio_socket.close()
+        self.client_socket.close()
 
     def _generate_video(self):
         """Generating video feed from webcam"""
@@ -62,6 +63,7 @@ class VideoChat(ABC):
 
     @abstractmethod
     def start_chat(self):
+        self.client_socket.settimeout(None)
         t1 = threading.Thread(target=self._send_message, args=())
         t2 = threading.Thread(target=self._get_message, args=())
         t1.start()
@@ -156,13 +158,13 @@ class ClientPassive(VideoChat):
         super().__init__()
         self.client_address = None  # Field for storing clients address
         print(self.host_ip)
-        print('Listening at:', (self.host_ip, PORT))
 
     def start_chat(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((self.host_ip, MESSAGE_PORT))
-        s.listen(5)
-        self.client_socket, self.client_address = s.accept()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((self.host_ip, MESSAGE_PORT))
+            s.settimeout(60)
+            s.listen(5)
+            self.client_socket, self.client_address = s.accept()
         super().start_chat()
 
     def _get_video(self):
@@ -216,6 +218,7 @@ class ClientActive(VideoChat):
     def start_chat(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         socket_address = (self.server_ip, MESSAGE_PORT)
+        self.client_socket.settimeout(60)
         self.client_socket.connect(socket_address)
         super().start_chat()
 
@@ -241,7 +244,6 @@ class ClientActive(VideoChat):
                 break
 
     def _send_video(self):
-        self.video_socket.sendto(b'Hello', (self.server_ip, VIDEO_PORT))
         self.start_audio(self.server_ip)
         while True:
             while True:
