@@ -42,11 +42,13 @@ class VideoChat(ABC):
         self.video_socket.bind(socket_address)
         self.audio_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # Socket used for audio connection
         self.audio_socket.bind((self.host_ip, AUDIO_PORT))
+        self.connected = False
 
     def __del__(self):
         self.video_socket.close()
         self.audio_socket.close()
-        self.client_socket.close()
+        if self.client_socket:
+            self.client_socket.close()
 
     def _generate_video(self):
         """Generating video feed from webcam"""
@@ -58,11 +60,11 @@ class VideoChat(ABC):
             except:
                 os._exit(1)
             time.sleep(0.001)
-        print('Player closed')
         self.vid.release()
 
     @abstractmethod
     def start_chat(self):
+        self.connected = True
         self.client_socket.settimeout(None)
         t1 = threading.Thread(target=self._send_message, args=())
         t2 = threading.Thread(target=self._get_message, args=())
@@ -127,8 +129,8 @@ class VideoChat(ABC):
                 data = data[msg_size:]
                 frame = pickle.loads(frame_data)  # received message
                 print('', end='\n')
-                print('TEXT RECEIVED:', frame, end='\n')
-                print('TEXT ENTER BELOW:')
+                print('Message received:', frame, end='\n')
+                print('Enter message to send:')
                 time.sleep(0.001)
             except Exception:
                 print('Your friend left conversation')
@@ -140,7 +142,7 @@ class VideoChat(ABC):
         while True:
             if self.client_socket:
                 while True:
-                    print('SERVER TEXT ENTER BELOW:')
+                    print('Enter message to send:')
                     data = input()
                     a = pickle.dumps(data)
                     message = struct.pack("Q", len(a)) + a
@@ -177,11 +179,10 @@ class ClientPassive(VideoChat):
                 data = base64.b64decode(packet, ' /')
                 npdata = np.frombuffer(data, dtype=np.uint8)
                 frame = cv2.imdecode(npdata, 1)
-                cv2.imshow("SERVER RECEIVING VIDEO", frame)
+                cv2.imshow("Your friends webcam", frame)
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
+                if self.video_break.is_set():
                     self.video_socket.settimeout(None)
-                    self.video_break.set()
                     SystemExit()
                 time.sleep(0.001)
             except socket.timeout:
@@ -198,7 +199,7 @@ class ClientPassive(VideoChat):
             encoded, buffer = cv2.imencode('.jpeg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             message = base64.b64encode(buffer)
             self.video_socket.sendto(message, (self.client_address[0], VIDEO_PORT))
-            cv2.imshow('SERVER TRANSMITTING VIDEO', frame)
+            cv2.imshow('Your webcam', frame)
             cv2.waitKey(1) & 0xFF
             if self.video_break.is_set():  # in case of disconnection destroy video windows
                 cv2.destroyAllWindows()
@@ -213,7 +214,6 @@ class ClientActive(VideoChat):
     def __init__(self, server_ip):
         super().__init__()
         self.server_ip = server_ip
-        print(self.server_ip)
 
     def start_chat(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -232,9 +232,8 @@ class ClientActive(VideoChat):
                 frame = cv2.imdecode(npdata, 1)
                 cv2.imshow("Your friend web cam", frame)
                 key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
+                if self.video_break.is_set():
                     self.video_socket.settimeout(None)
-                    self.video_break.set()
                     SystemExit()
                 time.sleep(0.001)
             except socket.timeout:
